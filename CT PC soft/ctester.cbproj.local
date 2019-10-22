@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+	<Transactions>
+    <Transaction>2018.09.24 10:39:55.625.cpp,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit1.cpp=C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.cpp</Transaction>
+    <Transaction>2018.09.24 10:39:55.647.h,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit1.h=C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.h</Transaction>
+    <Transaction>2018.09.24 10:39:55.647.dfm,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit1.dfm=C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.dfm</Transaction>
+    <Transaction>2018.09.24 10:41:12.142.cbproj,C:\Users\Gemicle\Documents\RAD Studio\Projects\Project1.cbproj=D:\Projects\Lab equipment\current test\PC soft\ctester.cbproj</Transaction>
+    <Transaction>2018.09.24 10:41:46.511.cpp,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.cpp=D:\Projects\Lab equipment\current test\PC soft\Unit_main.cpp</Transaction>
+    <Transaction>2018.09.24 10:41:46.511.h,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.h=D:\Projects\Lab equipment\current test\PC soft\Unit_main.h</Transaction>
+    <Transaction>2018.09.24 10:41:46.511.dfm,C:\Users\Gemicle\Documents\RAD Studio\Projects\Unit_main.dfm=D:\Projects\Lab equipment\current test\PC soft\Unit_main.dfm</Transaction>
+  </Transactions>
+	<ProjectSortOrder AutoSort="0" SortType="0">
+    <File Path="ctester.cpp"/>
+    <File Path="ctester.res"/>
+    <File Path="Unit_Cmd.cpp"/>
+    <File Path="Unit_Cmd.cpp"/>
+    <File Path="Unit_Cmd.h"/>
+    <File Path="Unit_main.cpp"/>
+    <File Path="Unit_main.cpp"/>
+    <File Path="Unit_main.dfm"/>
+    <File Path="Unit_main.h"/>
+    <File Path="Unit_Serial.cpp"/>
+  </ProjectSortOrder>
+</BorlandProject>

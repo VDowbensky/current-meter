@@ -1,0 +1,12 @@
+This file lists the orphan blocks found by CodeCompressor.
+Orphan code at 0x08004 (??)
+ -- Size: 0x00028
+Orphan code at 0x08072 (?updateLCD)
+ -- Size: 0x00002
+Orphan code at 0x081A9 (??)
+ -- Size: 0x00005
+Orphan code at 0x08847 (?putstr)
+ -- Size: 0x0002F
+Orphan code at 0x089FB (?TIM2OVF_ISR)
+ -- Size: 0x0001D
+ Total orphan size: 0x0007B

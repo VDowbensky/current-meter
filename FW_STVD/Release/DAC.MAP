@@ -1,0 +1,68 @@
+RLST7 LINKER/LOCATOR V2.28.10.092
+
+INVOKED BY:
+C:\Program Files (x86)\Raisonance\Ride\bin\rlstm8.exe -P 
+RELEASE\COMMANDS.O,RELEASE\DAC.O,RELEASE\ECMA0896.O,RELEASE\EEPROM.O,RELEASE\GPIO.O,RELEASE\MAIN.O,RELEASE\TIMERS.O,RELEASE\UART.O 
+TO(RELEASE\DAC.AOF) LIBPATH(C:\PROGRAM FILES (X86)\RAISONANCE\RIDE\LIB\ST7) 
+DEBUGLINES DEBUGPUBLICS DEBUGSYMBOLS NOPR DATASTART(0X0) RAMSIZE(0X800) 
+CODESTART(0X8000) CODESIZE(0X8000) STACKTOP(0X800) STACKSIZE(0X201) 
+EEPROMSTART(0X1000) EEPROMSIZE(0X400) 
+ WITHOUT ANY FLOATING POINT ARITHMETIC
+
+	  C:0081BDH        PUBLIC             ?C?chartoint
+	  C:0081B3H        PUBLIC             ?C?inttol
+	  C:008134H        PUBLIC             ?C?divs1616
+	  C:008179H        PUBLIC             ?C?muluix32
+	  C:00817FH        PUBLIC             _?lix_entry?
+	  C:00807CH        PUBLIC             ?C?mulu3232
+	  C:00814DH        PUBLIC             ?C?mv4_bc2isa
+	  C:00818BH        PUBLIC             ?C?mv4_bc2sk
+	  C:008058H        PUBLIC             ?C?srl328
+	  D:000034H        PUBLIC             ?BH
+	  D:000036H        PUBLIC             ?CH
+	  D:000035H        PUBLIC             ?BL
+	  D:000037H        PUBLIC             ?CL
+	  C:000000H        PUBLIC             CST7_START
+
+================================================================================
+PROJECT CALL TREE FOR RELEASE\DAC.AOF(COMMANDS)
+--------------------------------------------------------------------------------
+ *** means CALL
+ ... means JMP
+  KC means 'Known local stack consumption'.
+  TO means 'Total stack consumption from the entry point'.
+ Remarks:
+     1. Values are in HEXADECIMAL format.
+     2. SP can be modified by temporary 'PUSH-POP' sequences.
+     3. SP is computed starting from its 'original value' for interrupt/trap..
+ Displayed stack consumption may be under estimated.
+ The real value depends on interrupt priorities. It can be checked
+ using the dynamic analysis in the simulator environment.
+--------------------------------------------------------------------------------
+Initial SP: 07FF
+--------------------------------------------------------------------------------
+?TIM2OVF_ISR..............................................SP=07F8 KC=000 TO=0007
+--------------------------------------------------------------------------------
+?USART1_TX_Interrupt......................................SP=07F8 KC=000 TO=0007
+--------------------------------------------------------------------------------
+?USART1_RX_Interrupt......................................SP=07F8 KC=000 TO=0007
+    |***?rec_ident [UART].................................SP=07F6 KC=000 TO=0009
+    |***?rec_param [UART].................................SP=07F6 KC=000 TO=0009
+    |***?rec_command [UART]...............................SP=07F4 KC=002 TO=000B
+    |   |***?clearRxBuff [UART]...........................SP=07F2 KC=000 TO=000D
+    |   |***?checktunetable [UART]........................SP=07F0 KC=002 TO=000F
+    |   |   |***?clearRxBuff [UART].......................SP=07EE KC=000 TO=0011
+    |***?rec_addr [UART]..................................SP=07F6 KC=000 TO=0009
+    |***?rec_pref [UART]..................................SP=07F6 KC=000 TO=0009
+    |   |...?checktuneprefix [UART].......................SP=07F6 KC=000 TO=0009
+================================================================================
+
+MAX STACK LEVEL : 4
+-------------------
+
+
+----------------------
+SUGGESTED OPTIMIZATION
+----------------------
+Warning: 199 (C7H) data bytes in the range [00H-FFH] are available for storage.
+         Consider using some of these for 'page0' variables in your source files.

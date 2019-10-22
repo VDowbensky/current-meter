@@ -1,0 +1,38 @@
+﻿Field=#~Integer~#~50|Field=Comment~String~Comment~100|Field=Designator~String~Designator~100|Field=Footprint~String~Footprint~100|Field=Quantity~Integer~Quantity~100|Field=Вид~String~Вид~100|Field=Корпус~String~Корпус~100|Field=Номінал~String~Номінал~100|Field=Примітки~String~Примітки~100|Field=Точність/група~String~Точність/група~100|ReportField=Currency~<none>|ReportField=ProductionQuantity~1|ReportField=ProjectFileName~CT.PrjPCB|ReportField=ProjectFullPath~D:\Projects\Lab equipment\current test\HARD_V00\CT.PrjPCB|ReportField=Title~Bill of Materials For Project [CT.PrjPCB] (No PCB Document Selected)|ReportField=ReportTime~15:12:20|ReportField=ReportDate~06.12.2018|ReportField=ReportDateTime~06.12.2018 15:12:20|ReportField=OutputName~Bill of Materials|ReportField=OutputType~BOM_PartType|ReportField=GeneratorName~BOM|ReportField=GeneratorDescription~Bill of Materials|ReportField=VariantName~None|ReportField=TotalQuantity~71|ReportField=TotalActualPrice~0|ReportField=TotalTargetPrice~0|ReportField=VersionControl_RevNumber~|ReportField=VersionControl_ProjFolderRevNumber~|ReportField=~|ReportField=version~v1.2|ReportField=DeviceName~WCM|ReportField=Address1~|ReportField=Address2~|ReportField=Address3~|ReportField=Address4~|ReportField=Application_BuildNumber~|ReportField=ApprovedBy~|ReportField=Author~|ReportField=CheckedBy~|ReportField=CompanyName~|ReportField=ConfigurationParameters~|ReportField=CurrentDate~06.12.2018|ReportField=CurrentTime~14:57:29|ReportField=Date~|ReportField=DocumentFullPathAndName~D:\Projects\Lab equipment\current test\HARD_V00\CT_v02.SchDoc|ReportField=DocumentName~CT_v02.SchDoc|ReportField=DocumentNumber~WCM v1.2|ReportField=DocumentType~|ReportField=DocumentType1str~Схема електрична|ReportField=DocumentType2str~принципрва|ReportField=DrawnBy~Рулько В.|ReportField=Engineer~|ReportField=EngineerName~|ReportField=ImagePath~|ReportField=Letter1Column~|ReportField=Letter2Column~|ReportField=Letter3Column~|ReportField=Mass~|ReportField=ModifiedDate~06.12.2018|ReportField=NormInspection~|ReportField=Organization~|ReportField=PageSetup~Record=PageOptions:CenterHorizontal=False:CenterVertical=False:PrintScale=0.95:XCorrection=0.00:YCorrection=0.00:PrintKind=1:BorderSize=5000000:LeftOffset=0:BottomOffset=0:Orientation=1:PaperLength=1000:PaperWidth=1000:Scale=100:PaperSource=15:PrintQuality=600:MediaType=1:DitherType=10:PaperKind=A4:PrintScaleMode=1|ReportField=ProcessInspection~|ReportField=ProjectName~CT.PrjPCB|ReportField=ProjectNameForBOM~Вимірювач струму широкодіапазонний|ReportField=Revision~|ReportField=Rule~|ReportField=Scale~|ReportField=SheetNumber~1|ReportField=SheetTotal~1|ReportField=Time~|ReportField=Title~|ReportField=Title1str~Вимірювач струму|ReportField=Title2str~широкодіапазонний|ReportField=VersionForBOM~WCM v1.2|ReportField=DataSourceFileName~CT.PrjPCB|ReportField=DataSourceFullPath~D:\Projects\Lab equipment\current test\HARD_V00\CT.PrjPCB|ReportField=PCBConfigurationName~Sources|ReportField=Item~|ReportField=ItemRevision~|ReportField=ItemAndRevision~|ReportField=ItemRevisionBase~|ReportField=ItemRevisionLevel1~|ReportField=ItemRevisionLevel2~|ReportField=ItemRevisionLevel1AndBase~|ReportField=ItemRevisionLevel2AndLevel1~
+1|100u 16V|C1, C11, C15|C_TANTAL_D|3|Конденсатор|C_TANTAL_D|100u 16V||
+2|100n|C2, C3, C9, C10, C13, C14, C16, C17, C18, C19|C-0603|10|Конденсатор|C-0603|100n||X7R
+3|22p|C4, C5, C6, C7|C-0603|4|Конденсатор|C-0603|22p||NP0
+4|1u|C8|C-0603|1|Конденсатор|C-0603|1u||X7R
+5|22uF 6V|C12|C_TANTAL_A|1|Конденсатор|C_TANTAL_A|22uF 6V||
+6|100u 6.3V|C20|C_TANTAL_B|1|Конденсатор|C_TANTAL_B|100u 6.3V||
+7|22u|C21, C22, C23|C-1206|3|Конденсатор|C-1206|22u||X7R
+8|SS14|D1, D5|D-SMA|2|Діод|D-SMA|SS14||
+9|SM712|D2|SOT-23|1|Діод|SOT-23|SM712||
+10|LED|D3, D4|LED_0805|2|Діод|LED_0805|LED||
+11|nanoSMDC012F|F1, F2|R-1206|2|Термозапобіжник|R-1206|nanoSMDC012F||
+12|POWER|JP1|DC-140-003_3|1|Роз'єм|DC-140-003_3|POWER||
+13|4 HEADER|JP2|TERMINAL4_3|1|Роз'єм|TERMINAL4_3|4 HEADER||
+14|Header 4|JP3, JP4|PLS1-4|2|Роз'єм|PLS1-4|Header 4||
+15|LCD|JP5|PLS1-7|1|Роз'єм|PLS1-7|LCD||
+16|Header 2|JP6|TERMINAL2_1|1|Роз'єм|TERMINAL2_1|Header 2||
+17|100uH|L1|SND-0705_3|1|Індуктивність|SND-0705_3|100uH||
+18|BC847C|Q1|SOT-23|1|Транзистор|SOT-23|BC847C||
+19|BC847|Q2|SOT-23|1|Транзистор|SOT-23|BC847||
+20|BC807|Q3|SOT-23|1|Транзистор|SOT-23|BC807||
+21|IRF7604|Q4|SSOP-8|1|Транзистор|SSOP-8|IRF7604||
+22|nc|R1, R7, R20|R-0603|3|Резистор|R-0603|nc||5%
+23|10k|R2, R3, R5, R10, R13|R-0603|5|Резистор|R-0603|10k||5%
+24|0|R4, R15, R21|R-0603|3|Резистор|R-0603|0||5%
+25|2k2|R6|R-0603|1|Резистор|R-0603|2k2||5%
+26|470|R8, R9|R-0603|2|Резистор|R-0603|470||5%
+27|1k|R11, R14|R-0603|2|Резистор|R-0603|1k||5%
+28|1M|R12, R22|R-0603|2|Резистор|R-0603|1M||5%
+29|22k|R16, R17, R19|R-0603|3|Резистор|R-0603|22k||5%
+30|100|R18|R-0603|1|Резистор|R-0603|100||5%
+31|ADM3483|U1|SO-8|1|Мікросхема|SO-8|ADM3483||
+32|LD1117-3.3|U2|SOT223|1|Мікросхема|SOT223|LD1117-3.3||
+33|STM8L151K6T6|U3|QFP-32|1|Мікросхема|QFP-32|STM8L151K6T6||
+34|LP2981-3.3|U4|SOT-23-5|1|Мікросхема|SOT-23-5|LP2981-3.3||
+35|LM2904|U5, U6|SO-8|2|Мікросхема|SO-8|LM2904||
+36|32.768k|Y1|KX26|1|Кварц|KX26|32.768k||
+37|16M|Y2|HC49_3.5mm|1|Кварц|HC49_3.5mm|16M||

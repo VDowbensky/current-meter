@@ -1,0 +1,1481 @@
+RCSTM8 COMPILER V2.28.10.092,  COMMANDS           09/21/18  13:57:44
+
+QCW(0x00963FA0)
+
+RCSTM8 COMPILER V2.28.10.092, COMPILATION OF MODULE COMMANDS  
+OBJECT MODULE PLACED IN Release\commands.o
+COMPILER INVOKED BY: OBJECT(Release\commands.o) PIN(C:\Program Files (x86)\Raisonance\Ride\inc\STM8) PIN(C:\Program Files (x86)\Raisonance\Ride\inc\ST7) PIN(C:\Program Files (x86)\Raisonance\Ride\inc) DGC(page0) AUTO WRV(0) PR(Release\commands.lst) CD CO SB OT(7,SIZE) STM8(SMALL) 
+
+stmt level    source
+   1          #include "commands.h"
+   2          #include "uart.h"
+   3          #include "timers.h"
+   4          #include "eeprom.h"
+   5          #include "gpio.h"
+   6          #include "dac.h"
+   7          
+   8          
+   9          void compCRC (BYTE crcCount);
+  10          void comp_crc (BYTE b);
+  11          void checkpacket (BYTE packlen);
+  12          void handlecommand(void);
+  13          bit checkEmptyID(void);
+  14          bit checkpassword(void);
+  15          void sendpacket(BYTE txcount);
+  16          void sendOKresponse(void);
+  17          void sendERRresponse(void);
+  18          void sendrequest(void);
+  19          
+  20          BYTE CRC;
+  21          BYTE TxCRC;
+  22          BYTE RxCRC;
+  23          bit F_Comm;
+  24          BYTE Command;
+  25          bit TuneMode;
+  26          bit F_Comm;
+  27          bit Lister;
+  28          
+  29          code const BYTE COMMANDLIST[] = {C_READONCE,9, C_READCONT,9, TC_ENTRY,4, 0,0};
+  30          code const BYTE TUNELIST[] = {TC_RD_SN,4, TC_RD_CONFIG,4, TC_WR_CONFIG,5, TC_RD_OFFSET,4, 
+  31          TC_WR_OFFSET,6, TC_RD_VTUNE,4, TC_WR_VTUNE,5, TC_WRDAC12,6, TC_WRDAC8,5, TC_RD_GAIN,4, TC_WR_GAIN,5, TC_WR_DEFAULT,
+  32          4, TC_WR_SN,10, TC_RESET_SN,8, TC_EXIT,4, 0, 0};
+  33          
+  34          
+  35          
+  36          void compCRC (BYTE crcCount)
+  37          {  	
+  38   1      	BYTE i;
+  39   1      	CRC=0;
+  40   1      	for (i=0; i<(crcCount); i++)
+  41   1      	{
+  42   2      		comp_crc(TxBuffer[i]);
+  43   2      		TxCRC=CRC;
+  44   2      	}
+  45   1      
+  46   1      }//CompCRC
+  47          
+  48          
+  49          void comp_crc (BYTE b)
+  50          {
+  51   1      	BYTE j;
+  52   1      	for (j=8; j>0; j--)
+  53   1      	{
+  54   2      		if ( (b ^ CRC) & 0x01) 
+  55   2      		{ 
+  56   3            	CRC = ( (CRC ^ CRCPOLY) >> 1 ) | 0x80; 
+  57   3          	} 
+  58   2      		else 
+  59   2      		{ 
+  60   3            	CRC >>= 1; 
+  61   3          	} 
+  62   2          	b >>= 1;
+  63   2      	}
+  64   1      }//comp_crc
+  65          
+  66          void checkpacket (BYTE packlen)
+  67          {
+  68   1       	BYTE i;
+  69   1      	//RxCRC = 0;
+  70   1      	CRC=0;
+  71   1      	for (i=0; i<packlen; i++)	
+  72   1      	{
+  73   2      	comp_crc (RxBuffer[i]);
+  74   2      	RxCRC = CRC;
+  75   2      	}
+  76   1      	if (RxCRC == RxBuffer[packlen]) 
+  77   1      	{
+  78   2      	F_Comm = 1;
+  79   2      	Command = RxBuffer[2];
+  80   2      	}
+  81   1      	else clearRxBuff();
+  82   1      	
+  83   1      } 
+  84          
+  85          void handlecommand(void)
+  86          {	 	
+  87   1      		F_Comm = 0;
+  88   1      		CommError = 0;
+  89   1      		RxStatus = 0;
+  90   1      		//Command=RxBuffer[2];
+  91   1      		switch (Command)
+  92   1      		{
+  93   2      		case C_READONCE:
+  94   2      		case C_READCONT:
+  95   2      		{
+  96   3      		DWORD tmp;
+  97   3      		ErrCounter = MAXERRCOUNT; //reset error counter
+  98   3      		CommError = 0;
+  99   3      		LED_set(1);
+ 100   3      		tmp = RxBuffer[6]+(WORD)(256*RxBuffer[7]);
+ 101   3      		tmp = (tmp*((Gain & ~0x80)+4))/4;
+ 102   3      		DACvalue = (WORD)tmp/16;
+ 103   3      		updateDAC();
+ 104   3      		if (CheckERF) blink(1); //normal current mode
+ 105   3      		else blink (3); //error - current loop open!
+ 106   3      		break;
+ 107   3      		}
+ 108   2      		
+ 109   2      		case TC_ENTRY:
+ 110   2      		//tune mode entry
+ 111   2      		TuneMode = 1;
+ 112   2      		sendOKresponse();
+ 113   2      		blink(5);
+ 114   2      		break;
+ 115   2      	
+ 116   2      
+ 117   2      		case TC_RD_SN: //send date of manufacturing & serial number
+ 118   2      		 	{
+ 119   3      			BYTE i;
+ 120   3      			for (i=0; i<8; i++) TxBuffer[i+3]=PARAMS[i];
+ 121   3      			//TxBuffer[17]=NetAddr;
+ 122   3      			//TxBuffer[13] = LO(DACvalue);
+ 123   3      			//TxBuffer[14] = HI(DACvalue);
+ 124   3      			//TxCount=21;
+ 125   3      			sendpacket(11);
+ 126   3      			}
+ 127   2      			break;
+ 128   2      
+ 129   2      		case TC_RD_CONFIG: //fake response, for compatibility
+ 130   2      		TxBuffer[3] = 0; 
+ 131   2      		sendpacket(4);
+ 132   2      		break;
+ 133   2      			
+ 134   2      		case TC_WR_CONFIG: //fake response, for compatibility
+ 135   2      		sendOKresponse();			
+ 136   2      		break;
+ 137   2      			
+ 138   2      		case TC_RD_OFFSET:
+ 139   2      		TxBuffer[3] = Offset12;
+ 140   2      		TxBuffer[4] = 0; //offset8 not implemented
+ 141   2      		sendpacket(5);
+ 142   2      		break;
+ 143   2      		
+ 144   2      			
+ 145   2      		case TC_WR_OFFSET:
+ 146   2      		Offset12 = RxBuffer[3];
+ 147   2      		ee_read();
+ 148   2      		EEbuffer[9] = Offset12;
+ 149   2      		ee_pgm();
+ 150   2      		updateDAC();
+ 151   2      		sendOKresponse();
+ 152   2      		break;
+ 153   2      			
+ 154   2      		case TC_RD_VTUNE:
+ 155   2      		TxBuffer[3] = Vtune;
+ 156   2      		sendpacket(4);
+ 157   2      		break;
+ 158   2      			
+ 159   2      			
+ 160   2      		case TC_WR_VTUNE:
+ 161   2      		Vtune = RxBuffer[3];
+ 162   2      		ee_read();
+ 163   2      		EEbuffer[8] = Vtune;
+ 164   2      		ee_pgm();
+ 165   2      		updateTIM3();
+ 166   2      		updateDAC();
+ 167   2      		sendOKresponse();
+ 168   2      		break;
+ 169   2      		
+ 170   2      		case TC_WRDAC12:
+ 171   2      		{
+ 172   3      		DWORD tmp;
+ 173   3      		ErrCounter = MAXERRCOUNT; //reset error counter
+ 174   3      		CommError = 0;
+ 175   3      		//LED = 0;
+ 176   3      		tmp = RxBuffer[3]+(WORD)(256*RxBuffer[4]);
+ 177   3      		tmp = (tmp*((Gain & ~0x80)+4))/4;
+ 178   3      		DACvalue = (WORD)tmp;
+ 179   3      		updateDAC();
+ 180   3      		if (CheckERF) blink(1); //normal current mode
+ 181   3      		else blink (3); //error - current loop open!
+ 182   3      		break;
+ 183   3      		}
+ 184   2      		  
+ 185   2      		case TC_WRDAC8:
+ 186   2      		sendOKresponse();
+ 187   2      		break;
+ 188   2      		
+ 189   2      		case TC_RD_GAIN://send 1 zero byte 
+ 190   2      		TxBuffer[3] = Gain;
+ 191   2      		sendpacket(4);
+ 192   2      		break;
+ 193   2      
+ 194   2      		case TC_WR_GAIN://send 2 dummy byte, maybe fake value of Vcc (about 3,3 V).
+ 195   2      		Gain = RxBuffer[3];
+ 196   2      		ee_read();
+ 197   2      		EEbuffer[10] = Gain;
+ 198   2      		ee_pgm();
+ 199   2      		updateDAC();
+ 200   2      		if (Gain & 0x80) Lister = 1;
+ 201   2      		else Lister = 0;
+ 202   2      		sendOKresponse();
+ 203   2      		break;
+ 204   2      
+ 205   2      
+ 206   2      		case TC_WR_DEFAULT:
+ 207   2      		sendOKresponse();
+ 208   2      	 	break;
+ 209   2      		
+ 210   2      		case TC_WR_SN:
+ 211   2      		//check for zero serial number
+ 212   2      		if (!checkEmptyID()) sendERRresponse();
+ 213   2      			else 
+ 214   2      		 	
+ 215   2      		 		{
+ 216   3      				BYTE i;
+ 217   3      				ee_read();
+ 218   3      				for (i=0; i<6; i++)	EEbuffer[i] = RxBuffer[i+3];
+ 219   3      				ee_pgm();
+ 220   3      		 		sendOKresponse();
+ 221   3      				}
+ 222   2      		 		break;
+ 223   2      				
+ 224   2      	
+ 225   2      		case TC_RESET_SN:
+ 226   2      		if (!checkpassword()) sendERRresponse();
+ 227   2      		 else
+ 228   2      		 	{
+ 229   3      			BYTE i;
+ 230   3      			ee_read();
+ 231   3      			for (i=0; i<6; i++) EEbuffer[i] = 0;
+ 232   3      			ee_pgm();
+ 233   3      			sendOKresponse();
+ 234   3      			}
+ 235   2      		break;
+ 236   2      		
+ 237   2      		case TC_EXIT://update parameters, then blink 5 times and go to work mode
+ 238   2      		sendOKresponse();
+ 239   2      		blink(5);
+ 240   2      		TuneMode = 0;
+ 241   2      		readparameters();
+ 242   2      		break;
+ 243   2      		
+ 244   2      		
+ 245   2      		default:
+ 246   2      		break;	//nothing to do
+ 247   2      
+ 248   2      		}//switch (Command)
+ 249   1      		clearRxBuff();
+ 250   1      		//else
+ 251   1      	} //void EDEhandle(void)
+ 252          	
+ 253          bit checkEmptyID(void)
+ 254          {
+ 255   1      
+ 256   1      	BYTE i;
+ 257   1      	ee_read();
+ 258   1      	for (i=0; i<6; i++)
+ 259   1      	{
+ 260   2      	if (EEbuffer[i] !=0) return 0;
+ 261   2      	}
+ 262   1      	return 1;
+ 263   1      }
+ 264          
+ 265          bit checkpassword(void)
+ 266          {
+ 267   1      	BYTE i;
+ 268   1      	for (i=0; i<4; i++)
+ 269   1      	{
+ 270   2      	if (RxBuffer[i+3] != PASSWORD[i]) return 0;
+ 271   2      	}
+ 272   1      	return 1;
+ 273   1      }
+ 274          
+ 275          void sendpacket(BYTE txcount)
+ 276          {
+ 277   1      		if (!TuneMode) TxBuffer[0]=TXPREFIX;
+ 278   1      		else TxBuffer[0]=TUNEPREFIX;
+ 279   1      		if (!TuneMode) TxBuffer[1]=0xFF;
+ 280   1      		else TxBuffer[1]=IDENT;
+ 281   1      		TxBuffer[2]=Command;
+ 282   1      		//other fields are filled in command handler
+ 283   1      		compCRC(txcount);
+ 284   1      		TxBuffer[txcount]=TxCRC;
+ 285   1      		RxPointer=0;
+ 286   1      		//delay(5);
+ 287   1      		putpack(txcount);
+ 288   1      		clearRxBuff();//RxFlag=0;//command executed
+ 289   1      
+ 290   1      }
+ 291          void sendOKresponse(void)
+ 292          {		TxBuffer[3]=0;
+ 293   1      		sendpacket(4);
+ 294   1      		blink(2);
+ 295   1      }
+ 296          
+ 297          void sendERRresponse(void)
+ 298          {		TxBuffer[3]=1;
+ 299   1      		sendpacket(4);
+ 300   1      		blink(3);
+ 301   1      }
+ 302          
+ 303          void sendrequest(void)
+ 304          {
+ 305   1      	if (Lister || TuneMode) 
+ 306   1      	{
+ 307   2      		
+ 308   2      	}
+ 309   1      	else
+ 310   1      	{
+ 311   2      		Command = C_READONCE;
+ 312   2      		sendpacket(3);
+ 313   2      	}
+ 314   1      	Tim2Flag = 0;
+ 315   1      }
+ 316          
+RCSTM8 COMPILER V2.28.10.092
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+              ; FUNCTION ?compCRC (BEGIN)
+              ; Register-parameter crcCount (A) is relocated (auto)
+              ; SOURCE LINE # 36 
+0000 88                                PUSH   A
+0001 88                                PUSH   A
+              ; SOURCE LINE # 39 
+0002 3F00       F                      CLR    CRC
+              ; SOURCE LINE # 40 
+0004 0F01       F                      CLR    (001H,SP)   ; [ i ]
+0006         ?FOR_0001:
+0006 7B01       F                      LD     A,(001H,SP)   ; [ i ]
+0008 1102       F                      CP     A,(002H,SP)   ; [ crcCount ]
+000A 240F                              JRUGE  ?EPILOG_0000
+              ; SOURCE LINE # 42 
+000C 5F                                CLRW   X
+000D 97                                LD     XL,A
+000E D60000     F                      LD     A,(TxBuffer + 00H,X)
+0011 CD0000     F                      CALL   ?comp_crc
+              ; SOURCE LINE # 43 
+0014 450000     F                      MOV    TxCRC,CRC
+              ; SOURCE LINE # 40 
+0017 0C01       F                      INC    (001H,SP)   ; [ i ]
+0019 20EB                              JRA    ?FOR_0001
+001B         ?EPILOG_0000:
+001B 85                                POPW   X
+001C 81                                RET    
+              ; crcCount     unsigned char  (size=1).  parameter in AUTO
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+
+              ; FUNCTION ?compCRC (END)
+
+              ; FUNCTION ?comp_crc (BEGIN)
+              ; Register-parameter b (A) is relocated (auto)
+              ; SOURCE LINE # 49 
+0000 88                                PUSH   A
+              ; SOURCE LINE # 52 
+0001 4B08                              PUSH   #008H
+0003         ?FOR_0003:
+0003 4F                                CLR    A
+0004 1101       F                      CP     A,(001H,SP)   ; [ j ]
+0006 241B                              JRUGE  ?EPILOG_0001
+              ; SOURCE LINE # 54 
+0008 7B02       F                      LD     A,(002H,SP)   ; [ b ]
+000A B800       F                      XOR    A,CRC
+000C A501                              BCP    A,#001H
+000E 270B                              JREQ   ?ELSE_0001
+              ; SOURCE LINE # 56 
+0010 B600       F                      LD     A,CRC
+0012 AE0018                            LDW    X,#00018H
+0015 BF02       F                      LDW    ?BH.w,X
+0017 B804       F                      XOR    A,?BL
+0019 2002                              JRA    ?NXT_0009
+001B         ?ELSE_0001:
+              ; SOURCE LINE # 60 
+001B 3400       F                      SRL    CRC
+001D         ?NXT_0009:
+              ; SOURCE LINE # 62 
+001D 0402                              SRL    (002H,SP)   ; [ b ]
+              ; SOURCE LINE # 52 
+001F 0A01       F                      DEC    (001H,SP)   ; [ j ]
+0021 20E0                              JRA    ?FOR_0003
+0023         ?EPILOG_0001:
+0023 85                                POPW   X
+0024 81                                RET    
+              ; b            unsigned char  (size=1).  parameter in AUTO
+              ; j            unsigned char  (size=1). Automatic variable  in AUTO
+
+              ; FUNCTION ?comp_crc (END)
+
+              ; FUNCTION ?checkpacket (BEGIN)
+              ; Register-parameter packlen (A) is relocated (auto)
+              ; SOURCE LINE # 66 
+0000 88                                PUSH   A
+0001 88                                PUSH   A
+              ; SOURCE LINE # 70 
+0002 3F00       F                      CLR    CRC
+              ; SOURCE LINE # 71 
+0004 0F01       F                      CLR    (001H,SP)   ; [ i ]
+0006         ?FOR_0005:
+0006 7B01       F                      LD     A,(001H,SP)   ; [ i ]
+0008 5F                                CLRW   X
+0009 1102       F                      CP     A,(002H,SP)   ; [ packlen ]
+000B 240E                              JRUGE  ?NXT_0013
+              ; SOURCE LINE # 73 
+000D 97                                LD     XL,A
+000E D60000     F                      LD     A,(RxBuffer + 00H,X)
+0011 CD0000     F                      CALL   ?comp_crc
+              ; SOURCE LINE # 74 
+0014 450000     F                      MOV    RxCRC,CRC
+              ; SOURCE LINE # 71 
+0017 0C01       F                      INC    (001H,SP)   ; [ i ]
+0019 20EB                              JRA    ?FOR_0005
+001B         ?NXT_0013:
+              ; SOURCE LINE # 76 
+001B 7B02       F                      LD     A,(002H,SP)   ; [ packlen ]
+001D 97                                LD     XL,A
+001E B600       F                      LD     A,RxCRC
+0020 D10000     F                      CP     A,(RxBuffer + 00H,X)
+0023 260B                              JRNE   ?ELSE_0003
+              ; SOURCE LINE # 78 
+0025 72100000   F                      BSET   F_Comm
+              ; SOURCE LINE # 79 
+0029 5500000000 F                      MOV    Command,RxBuffer + 02H
+002E 2003                              JRA    ?EPILOG_0002
+0030         ?ELSE_0003:
+              ; SOURCE LINE # 81 
+0030 CD0000     F                      CALL   ?clearRxBuff
+0033         ?EPILOG_0002:
+0033 85                                POPW   X
+0034 81                                RET    
+              ; packlen      unsigned char  (size=1).  parameter in AUTO
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+
+              ; FUNCTION ?checkpacket (END)
+
+              ; FUNCTION ?handlecommand (BEGIN)
+              ; SOURCE LINE # 85 
+0000 520B                              SUB    SP,#00BH
+              ; SOURCE LINE # 87 
+0002 72110000   F                      BRES   F_Comm
+              ; SOURCE LINE # 88 
+0006 72110000   F                      BRES   CommError
+              ; SOURCE LINE # 89 
+000A 3F00       F                      CLR    RxStatus
+              ; SOURCE LINE # 91 
+000C B600       F                      LD     A,Command
+000E A106                              CP     A,#006H
+0010 2768                              JREQ   ?CASE_0019
+0012 A107                              CP     A,#007H
+0014 2764                              JREQ   ?CASE_0019
+0016 A080                              SUB    A,#080H
+0018 2603                              JRNE   ?LAB_0006
+001A CC0000     F                      JP     ?CASE_0020
+001D         ?LAB_0006:
+001D 4A                                DEC    A
+001E 2603                              JRNE   ?LAB_0007
+0020 CC0000     F                      JP     ?CASE_0021
+0023         ?LAB_0007:
+0023 4A                                DEC    A
+0024 2603                              JRNE   ?LAB_0008
+0026 CC0000     F                      JP     ?CASE_0022
+0029         ?LAB_0008:
+0029 4A                                DEC    A
+002A 2603                              JRNE   ?LAB_0009
+002C CC0000     F                      JP     ?CASE_0023
+002F         ?LAB_0009:
+002F 4A                                DEC    A
+0030 2603                              JRNE   ?LAB_0010
+0032 CC0000     F                      JP     ?CASE_0024
+0035         ?LAB_0010:
+0035 4A                                DEC    A
+0036 2603                              JRNE   ?LAB_0011
+0038 CC0000     F                      JP     ?CASE_0025
+003B         ?LAB_0011:
+003B 4A                                DEC    A
+003C 2603                              JRNE   ?LAB_0012
+003E CC0000     F                      JP     ?CASE_0026
+0041         ?LAB_0012:
+0041 4A                                DEC    A
+0042 2603                              JRNE   ?LAB_0013
+0044 CC0000     F                      JP     ?CASE_0027
+0047         ?LAB_0013:
+0047 4A                                DEC    A
+0048 2603                              JRNE   ?LAB_0014
+004A CC0000     F                      JP     ?CASE_0028
+004D         ?LAB_0014:
+004D 4A                                DEC    A
+004E 2603                              JRNE   ?LAB_0015
+0050 CC0000     F                      JP     ?OPTI_0009
+0053         ?LAB_0015:
+0053 4A                                DEC    A
+0054 2603                              JRNE   ?LAB_0016
+0056 CC0000     F                      JP     ?CASE_0030
+0059         ?LAB_0016:
+0059 4A                                DEC    A
+005A 2603                              JRNE   ?LAB_0017
+005C CC0000     F                      JP     ?CASE_0031
+005F         ?LAB_0017:
+005F 4A                                DEC    A
+0060 2603                              JRNE   ?LAB_0018
+0062 CC0000     F                      JP     ?OPTI_0009
+0065         ?LAB_0018:
+0065 4A                                DEC    A
+0066 2603                              JRNE   ?LAB_0019
+0068 CC0000     F                      JP     ?CASE_0033
+006B         ?LAB_0019:
+006B 4A                                DEC    A
+006C 2603                              JRNE   ?LAB_0020
+006E CC0000     F                      JP     ?CASE_0034
+0071         ?LAB_0020:
+0071 4A                                DEC    A
+0072 2603                              JRNE   ?LAB_0021
+0074 CC0000     F                      JP     ?CASE_0035
+0077         ?LAB_0021:
+              ; SOURCE LINE # 246 
+0077 CC0000     F                      JP     ?NXT_0028
+007A         ?CASE_0019:
+              ; SOURCE LINE # 97 
+007A 351E0000   F                      MOV    ErrCounter,#01EH
+              ; SOURCE LINE # 98 
+007E 72110000   F                      BRES   CommError
+              ; SOURCE LINE # 99 
+0082 A601                              LD     A,#001H
+0084 CD0000     F                      CALL   ?LED_set
+              ; SOURCE LINE # 100 
+0087 C60000     F                      LD     A,RxBuffer + 07H
+008A 5F                                CLRW   X
+008B 95                                LD     XH,A
+008C BF02       F                      LDW    ?BH.w,X
+008E C60000     F                      LD     A,RxBuffer + 06H
+0091 5F                                CLRW   X
+0092 97                                LD     XL,A
+0093 72BB0002   F                      ADDW   X,?BH.w
+0097 BF03       F                      LDW    ?CH,X
+0099 5F                                CLRW   X
+009A BF03       F                      LDW    ?BH,X
+009C 4F                                CLR    A
+009D CD0000     F                      CALL   ?C?mv4_bc2isa
+              ; SOURCE LINE # 101 
+00A0 B600       F                      LD     A,Gain
+00A2 A47F                              AND    A,#07FH
+00A4 B704       F                      LD     ?BL,A
+00A6 BE02       F                      LDW    X,?BH.w
+00A8 1C0004                            ADDW   X,#00004H
+00AB CD0000     F                      CALL   ?C?inttol
+00AE CD0000     F DNF                  CALL   ?C?mv4_bc2sk
+00B1 96           DNF                  LDW    X,SP
+00B2 1C0005     F                      ADDW   X,#00005H
+00B5 CD0000     F DNF                  CALL   ?C?muluix32
+00B8 A602                              LD     A,#002H
+00BA CD0000     F                      CALL   ?C?srl328
+00BD 4F                                CLR    A
+00BE CD0000     F                      CALL   ?C?mv4_bc2isa
+              ; SOURCE LINE # 102 
+00C1 1E03       F                      LDW    X,(003H,SP)   ; [ tmp + 02H ]
+00C3 54                                SRLW   X
+00C4 54                                SRLW   X
+00C5 54                                SRLW   X
+00C6 54                                SRLW   X
+00C7 BF00       F                      LDW    DACvalue,X
+              ; SOURCE LINE # 103 
+00C9 CD0000     F                      CALL   ?updateDAC
+              ; SOURCE LINE # 104 
+00CC AE0000     F                      LDW    X,#?CheckERF
+00CF 2708                              JREQ   ?ELSE_0009
+00D1 A601                              LD     A,#001H
+00D3 CD0000     F                      CALL   ?blink
+00D6 CC0000     F                      JP     ?NXT_0028
+00D9         ?ELSE_0009:
+
+00D9         ?OPTI_0003:
+              ; SOURCE LINE # 105 
+00D9 A603                              LD     A,#003H
+00DB         ?OPTI_0012:
+00DB CD0000     F                      CALL   ?blink
+              ; SOURCE LINE # 106 
+00DE CC0000     F                      JP     ?NXT_0028
+              ; tmp          unsigned long  (size=4-Alg). Automatic variable  in AUTO
+00E1         ?CASE_0020:
+              ; SOURCE LINE # 111 
+00E1 72120000   F                      BSET   TuneMode
+              ; SOURCE LINE # 112 
+00E5 CD0000     F                      CALL   ?sendOKresponse
+              ; SOURCE LINE # 113 
+00E8 A605                              LD     A,#005H
+              ; SOURCE LINE # 114 
+00EA 20EF                              JRA    ?OPTI_0012
+00EC         ?CASE_0021:
+              ; SOURCE LINE # 120 
+00EC 0F05       F                      CLR    (005H,SP)   ; [ i ]
+00EE         ?FOR_0009:
+00EE 7B05       F                      LD     A,(005H,SP)   ; [ i ]
+00F0 5F                                CLRW   X
+00F1 97                                LD     XL,A
+00F2 D60000     F                      LD     A,(PARAMS + 00H,X)
+00F5 88                                PUSH   A
+00F6 7B06       F                      LD     A,(006H,SP)   ; [ i ]
+00F8 97                                LD     XL,A
+00F9 1C0003                            ADDW   X,#00003H
+00FC 84                                POP    A
+00FD D70000     F                      LD     (TxBuffer + 00H,X),A
+0100 0C05       F                      INC    (005H,SP)   ; [ i ]
+0102 A608                              LD     A,#008H
+0104 1105       F                      CP     A,(005H,SP)   ; [ i ]
+0106 22E6                              JRUGT  ?FOR_0009
+              ; SOURCE LINE # 125 
+0108 A60B                              LD     A,#00BH
+010A         ?OPTI_0011:
+010A CD0000     F                      CALL   ?sendpacket
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+              ; SOURCE LINE # 127 
+010D CC0000     F                      JP     ?NXT_0028
+0110         ?CASE_0022:
+              ; SOURCE LINE # 130 
+0110 725F0000   F                      CLR    TxBuffer + 03H
+0114         ?OPTI_0004:
+              ; SOURCE LINE # 131 
+0114 A604                              LD     A,#004H
+              ; SOURCE LINE # 132 
+0116 20F2                              JRA    ?OPTI_0011
+0118         ?CASE_0023:
+
+0118         ?OPTI_0009:
+              ; SOURCE LINE # 135 
+0118 CD0000     F                      CALL   ?sendOKresponse
+              ; SOURCE LINE # 136 
+011B CC0000     F                      JP     ?NXT_0028
+011E         ?CASE_0024:
+              ; SOURCE LINE # 139 
+011E 5500000000 F                      MOV    TxBuffer + 03H,Offset12
+              ; SOURCE LINE # 140 
+0123 725F0000   F                      CLR    TxBuffer + 04H
+              ; SOURCE LINE # 141 
+0127 A605                              LD     A,#005H
+              ; SOURCE LINE # 142 
+0129 20DF                              JRA    ?OPTI_0011
+012B         ?CASE_0025:
+              ; SOURCE LINE # 146 
+012B 5500000000 F                      MOV    Offset12,RxBuffer + 03H
+              ; SOURCE LINE # 147 
+0130 CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 148 
+0133 450000     F                      MOV    EEbuffer + 09H,Offset12
+              ; SOURCE LINE # 149 
+0136 CD0000     F                      CALL   ?ee_pgm
+0139         ?OPTI_0001:
+              ; SOURCE LINE # 150 
+0139 CD0000     F                      CALL   ?updateDAC
+              ; SOURCE LINE # 152 
+013C 20DA                              JRA    ?OPTI_0009
+013E         ?CASE_0026:
+              ; SOURCE LINE # 155 
+013E 5500000000 F                      MOV    TxBuffer + 03H,Vtune
+              ; SOURCE LINE # 157 
+0143 20CF                              JRA    ?OPTI_0004
+0145         ?CASE_0027:
+              ; SOURCE LINE # 161 
+0145 5500000000 F                      MOV    Vtune,RxBuffer + 03H
+              ; SOURCE LINE # 162 
+014A CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 163 
+014D 450000     F                      MOV    EEbuffer + 08H,Vtune
+              ; SOURCE LINE # 164 
+0150 CD0000     F                      CALL   ?ee_pgm
+              ; SOURCE LINE # 165 
+0153 CD0000     F                      CALL   ?updateTIM3
+              ; SOURCE LINE # 168 
+0156 20E1                              JRA    ?OPTI_0001
+0158         ?CASE_0028:
+              ; SOURCE LINE # 173 
+0158 351E0000   F                      MOV    ErrCounter,#01EH
+              ; SOURCE LINE # 174 
+015C 72110000   F                      BRES   CommError
+              ; SOURCE LINE # 176 
+0160 C60000     F                      LD     A,RxBuffer + 04H
+0163 5F                                CLRW   X
+0164 95                                LD     XH,A
+0165 BF02       F                      LDW    ?BH.w,X
+0167 C60000     F                      LD     A,RxBuffer + 03H
+016A 5F                                CLRW   X
+016B 97                                LD     XL,A
+016C 72BB0002   F                      ADDW   X,?BH.w
+0170 BF03       F                      LDW    ?CH,X
+0172 5F                                CLRW   X
+0173 BF03       F                      LDW    ?BH,X
+0175 A605       F                      LD     A,#005H
+0177 CD0000     F                      CALL   ?C?mv4_bc2isa
+              ; SOURCE LINE # 177 
+017A B600       F                      LD     A,Gain
+017C A47F                              AND    A,#07FH
+017E B704       F                      LD     ?BL,A
+0180 BE02       F                      LDW    X,?BH.w
+0182 1C0004                            ADDW   X,#00004H
+0185 CD0000     F                      CALL   ?C?inttol
+0188 CD0000     F DNF                  CALL   ?C?mv4_bc2sk
+018B 96           DNF                  LDW    X,SP
+018C 1C000A     F                      ADDW   X,#0000AH
+018F CD0000     F DNF                  CALL   ?C?muluix32
+0192 A602                              LD     A,#002H
+0194 CD0000     F                      CALL   ?C?srl328
+0197 A605       F                      LD     A,#005H
+0199 CD0000     F                      CALL   ?C?mv4_bc2isa
+              ; SOURCE LINE # 178 
+019C 1E08       F                      LDW    X,(008H,SP)   ; [ tmp + 02H ]
+019E BF00       F                      LDW    DACvalue,X
+              ; SOURCE LINE # 179 
+01A0 CD0000     F                      CALL   ?updateDAC
+              ; SOURCE LINE # 180 
+01A3 AE0000     F                      LDW    X,#?CheckERF
+01A6 2603                              JRNE   ?LAB_0022
+01A8 CC0000     F                      JP     ?OPTI_0003
+01AB         ?LAB_0022:
+01AB A601                              LD     A,#001H
+01AD CD0000     F                      CALL   ?blink
+01B0 CC0000     F                      JP     ?NXT_0028
+              ; tmp          unsigned long  (size=4-Alg). Automatic variable  in AUTO
+01B3         ?CASE_0030:
+              ; SOURCE LINE # 190 
+01B3 5500000000 F                      MOV    TxBuffer + 03H,Gain
+              ; SOURCE LINE # 192 
+01B8 CC0000     F                      JP     ?OPTI_0004
+01BB         ?CASE_0031:
+              ; SOURCE LINE # 195 
+01BB 5500000000 F                      MOV    Gain,RxBuffer + 03H
+              ; SOURCE LINE # 196 
+01C0 CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 197 
+01C3 450000     F                      MOV    EEbuffer + 0AH,Gain
+              ; SOURCE LINE # 198 
+01C6 CD0000     F                      CALL   ?ee_pgm
+              ; SOURCE LINE # 199 
+01C9 CD0000     F                      CALL   ?updateDAC
+              ; SOURCE LINE # 200 
+01CC 720F000007 F                      BTJF   Gain,#007H,?ELSE_0011
+01D1 72140000   F                      BSET   Lister
+01D5 CC0000     F                      JP     ?OPTI_0009
+01D8         ?ELSE_0011:
+              ; SOURCE LINE # 201 
+01D8 72150000   F                      BRES   Lister
+              ; SOURCE LINE # 208 
+01DC CC0000     F                      JP     ?OPTI_0009
+01DF         ?CASE_0033:
+              ; SOURCE LINE # 212 
+01DF CD0000     F                      CALL   ?checkEmptyID
+01E2 4D                                TNZ    A
+01E3 2605                              JRNE   ?ELSE_0012
+01E5 CD0000     F                      CALL   ?sendERRresponse
+01E8 204C                              JRA    ?NXT_0028
+01EA         ?ELSE_0012:
+              ; SOURCE LINE # 217 
+01EA CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 218 
+01ED 0F0A       F                      CLR    (00AH,SP)   ; [ i ]
+01EF         ?FOR_0010:
+01EF 7B0A       F                      LD     A,(00AH,SP)   ; [ i ]
+01F1 5F                                CLRW   X
+01F2 97                                LD     XL,A
+01F3 1C0003                            ADDW   X,#00003H
+01F6 D60000     F                      LD     A,(RxBuffer + 00H,X)
+01F9 88                                PUSH   A
+01FA 7B0B       F                      LD     A,(00BH,SP)   ; [ i ]
+01FC 5F                                CLRW   X
+01FD 97                                LD     XL,A
+01FE 84                                POP    A
+01FF E700       F                      LD     (EEbuffer + 00H,X),A
+0201 0C0A       F                      INC    (00AH,SP)   ; [ i ]
+0203 A606                              LD     A,#006H
+0205 110A       F                      CP     A,(00AH,SP)   ; [ i ]
+0207 22E6                              JRUGT  ?FOR_0010
+0209         ?OPTI_0000:
+              ; SOURCE LINE # 219 
+0209 CD0000     F                      CALL   ?ee_pgm
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+              ; SOURCE LINE # 222 
+020C CC0000     F                      JP     ?OPTI_0009
+020F         ?CASE_0034:
+              ; SOURCE LINE # 226 
+020F CD0000     F                      CALL   ?checkpassword
+0212 4D                                TNZ    A
+0213 2605                              JRNE   ?ELSE_0013
+0215 CD0000     F                      CALL   ?sendERRresponse
+0218 201C                              JRA    ?NXT_0028
+021A         ?ELSE_0013:
+              ; SOURCE LINE # 230 
+021A CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 231 
+021D AE0005                            LDW    X,#00005H
+0220         ?NXT_0039:
+0220 6F00       F                      CLR    (EEbuffer + 00H,X)
+0222 5A                                DECW   X
+0223 2AFB                              JRPL   ?NXT_0039
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+              ; SOURCE LINE # 235 
+0225 20E2                              JRA    ?OPTI_0000
+0227         ?CASE_0035:
+              ; SOURCE LINE # 238 
+0227 CD0000     F                      CALL   ?sendOKresponse
+              ; SOURCE LINE # 239 
+022A A605                              LD     A,#005H
+022C CD0000     F                      CALL   ?blink
+              ; SOURCE LINE # 240 
+022F 72130000   F                      BRES   TuneMode
+              ; SOURCE LINE # 241 
+0233 CD0000     F                      CALL   ?readparameters
+0236         ?NXT_0028:
+              ; SOURCE LINE # 249 
+0236 CD0000     F                      CALL   ?clearRxBuff
+0239 5B0B                              ADD    SP,#00BH
+023B 81                                RET    
+
+              ; FUNCTION ?handlecommand (END)
+
+              ; FUNCTION ?checkEmptyID (BEGIN)
+              ; SOURCE LINE # 253 
+0000 88                                PUSH   A
+              ; SOURCE LINE # 257 
+0001 CD0000     F                      CALL   ?ee_read
+              ; SOURCE LINE # 258 
+0004 0F01       F                      CLR    (001H,SP)   ; [ i ]
+0006         ?FOR_0013:
+              ; SOURCE LINE # 260 
+0006 7B01       F                      LD     A,(001H,SP)   ; [ i ]
+0008 5F                                CLRW   X
+0009 97                                LD     XL,A
+000A 6D00       F                      TNZ    (EEbuffer + 00H,X)
+000C 2703                              JREQ   ?NXT_0044
+000E 4F                                CLR    A
+000F 200A                              JRA    ?EPILOG_0004
+0011         ?NXT_0044:
+              ; SOURCE LINE # 258 
+0011 0C01       F                      INC    (001H,SP)   ; [ i ]
+0013 A606                              LD     A,#006H
+0015 1101       F                      CP     A,(001H,SP)   ; [ i ]
+0017 22ED                              JRUGT  ?FOR_0013
+              ; SOURCE LINE # 262 
+0019 4F                                CLR    A
+001A 4C                                INC    A
+001B         ?EPILOG_0004:
+001B 5B01                              ADD    SP,#001H
+001D 81                                RET    
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+
+              ; FUNCTION ?checkEmptyID (END)
+
+              ; FUNCTION ?checkpassword (BEGIN)
+              ; SOURCE LINE # 268 
+0000 4B00                              PUSH   #000H
+0002         ?FOR_0015:
+              ; SOURCE LINE # 270 
+0002 7B01       F                      LD     A,(001H,SP)   ; [ i ]
+0004 5F                                CLRW   X
+0005 97                                LD     XL,A
+0006 D60000     F                      LD     A,(PASSWORD + 00H,X)
+0009 B703       F                      LD     ?BH,A
+000B 7B01       F                      LD     A,(001H,SP)   ; [ i ]
+000D 97                                LD     XL,A
+000E 1C0003                            ADDW   X,#00003H
+0011 D60000     F                      LD     A,(RxBuffer + 00H,X)
+0014 B103       F                      CP     A,?BH
+0016 2703                              JREQ   ?NXT_0050
+0018 4F                                CLR    A
+0019 200A                              JRA    ?EPILOG_0005
+001B         ?NXT_0050:
+              ; SOURCE LINE # 268 
+001B 0C01       F                      INC    (001H,SP)   ; [ i ]
+001D A604                              LD     A,#004H
+001F 1101       F                      CP     A,(001H,SP)   ; [ i ]
+0021 22DF                              JRUGT  ?FOR_0015
+              ; SOURCE LINE # 272 
+0023 4F                                CLR    A
+0024 4C                                INC    A
+0025         ?EPILOG_0005:
+0025 5B01                              ADD    SP,#001H
+0027 81                                RET    
+              ; i            unsigned char  (size=1). Automatic variable  in AUTO
+
+              ; FUNCTION ?checkpassword (END)
+
+              ; FUNCTION ?sendpacket (BEGIN)
+              ; Register-parameter txcount (A) is relocated (auto)
+              ; SOURCE LINE # 275 
+0000 88                                PUSH   A
+              ; SOURCE LINE # 277 
+0001 7202000006 F                      BTJT   TuneMode,?ELSE_0020
+0006 35310000   F                      MOV    TxBuffer,#031H
+000A 2004                              JRA    ?NXT_0054
+000C         ?ELSE_0020:
+              ; SOURCE LINE # 278 
+000C 353F0000   F                      MOV    TxBuffer,#03FH
+0010         ?NXT_0054:
+              ; SOURCE LINE # 279 
+0010 7202000006 F                      BTJT   TuneMode,?ELSE_0021
+0015 35FF0000   F                      MOV    TxBuffer + 01H,#0FFH
+0019 2004                              JRA    ?NXT_0055
+001B         ?ELSE_0021:
+              ; SOURCE LINE # 280 
+001B 35010000   F                      MOV    TxBuffer + 01H,#001H
+001F         ?NXT_0055:
+              ; SOURCE LINE # 281 
+001F 5500000000 F                      MOV    TxBuffer + 02H,Command
+              ; SOURCE LINE # 283 
+0024 7B01       F                      LD     A,(001H,SP)   ; [ txcount ]
+0026 CD0000     F                      CALL   ?compCRC
+              ; SOURCE LINE # 284 
+0029 7B01       F                      LD     A,(001H,SP)   ; [ txcount ]
+002B 5F                                CLRW   X
+002C 97                                LD     XL,A
+002D B600       F                      LD     A,TxCRC
+002F D70000     F                      LD     (TxBuffer + 00H,X),A
+              ; SOURCE LINE # 285 
+0032 725F0000   F                      CLR    RxPointer
+              ; SOURCE LINE # 287 
+0036 7B01       F                      LD     A,(001H,SP)   ; [ txcount ]
+0038 CD0000     F                      CALL   ?putpack
+              ; SOURCE LINE # 288 
+003B CD0000     F                      CALL   ?clearRxBuff
+003E 84                                POP    A
+003F 81                                RET    
+              ; txcount      unsigned char  (size=1).  parameter in AUTO
+
+              ; FUNCTION ?sendpacket (END)
+
+              ; FUNCTION ?sendOKresponse (BEGIN)
+              ; SOURCE LINE # 292 
+0000 725F0000   F                      CLR    TxBuffer + 03H
+              ; SOURCE LINE # 293 
+0004 A604                              LD     A,#004H
+0006 CD0000     F                      CALL   ?sendpacket
+              ; SOURCE LINE # 294 
+0009 A602                              LD     A,#002H
+000B CC0000     F                      JP     ?blink
+
+              ; FUNCTION ?sendOKresponse (END)
+
+              ; FUNCTION ?sendERRresponse (BEGIN)
+              ; SOURCE LINE # 298 
+0000 35010000   F                      MOV    TxBuffer + 03H,#001H
+              ; SOURCE LINE # 299 
+0004 A604                              LD     A,#004H
+0006 CD0000     F                      CALL   ?sendpacket
+              ; SOURCE LINE # 300 
+0009 A603                              LD     A,#003H
+000B CC0000     F                      JP     ?blink
+
+              ; FUNCTION ?sendERRresponse (END)
+
+              ; FUNCTION ?sendrequest (BEGIN)
+              ; SOURCE LINE # 305 
+0000 7204000005 F                      BTJT   Lister,?LAB_0024
+0005 7203000002 F                      BTJF   TuneMode,?ELSE_0023
+000A         ?LAB_0024:
+              ; SOURCE LINE # 306 
+000A 2009                              JRA    ?NXT_0057
+000C         ?ELSE_0023:
+              ; SOURCE LINE # 311 
+000C 35060000   F                      MOV    Command,#006H
+              ; SOURCE LINE # 312 
+0010 A603                              LD     A,#003H
+0012 CD0000     F                      CALL   ?sendpacket
+0015         ?NXT_0057:
+              ; SOURCE LINE # 314 
+0015 72110000   F                      BRES   Tim2Flag
+0019 81                                RET    
+
+              ; FUNCTION ?sendrequest (END)
+
+RCSTM8 COMPILER V2.28.10.092
+NAME                                    CLASS   MSPACE  TYPE    OFFSET  SIZE
+====                                    =====   ======  ====    ======  ====
+
+PA_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005000H 1      
+PA_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005001H 1      
+PA_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005002H 1      
+PA_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005003H 1      
+PA_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005004H 1      
+PB_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005005H 1      
+PB_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005006H 1      
+PB_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005007H 1      
+PB_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005008H 1      
+PB_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005009H 1      
+PC_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500AH 1      
+PC_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500BH 1      
+PC_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500CH 1      
+PC_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500DH 1      
+PC_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500EH 1      
+PD_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00500FH 1      
+PD_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005010H 1      
+PD_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005011H 1      
+PD_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005012H 1      
+PD_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005013H 1      
+PE_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005014H 1      
+PE_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005015H 1      
+PE_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005016H 1      
+PE_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005017H 1      
+PE_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005018H 1      
+PF_ODR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005019H 1      
+PF_IDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00501AH 1      
+PF_DDR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00501BH 1      
+PF_CR1 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00501CH 1      
+PF_CR2 . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00501DH 1      
+FLASH_CR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005050H 1      
+FLASH_CR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005051H 1      
+FLASH_PUKR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005052H 1      
+FLASH_DUKR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005053H 1      
+FLASH_IAPSR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005054H 1      
+DMA1_GCSR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005070H 1      
+DMA1_GIR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005071H 1      
+DMA1_C0CR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005075H 1      
+DMA1_C0SPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005076H 1      
+DMA1_C0NDTR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005077H 1      
+DMA1_C0PAR . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005078H 2      
+DMA1_C0PARH. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005078H 1      
+DMA1_C0PARL. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005079H 1      
+DMA1_C0M0AR. . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00507BH 2      
+DMA1_C0M0ARH . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00507BH 1      
+DMA1_C0M0ARL . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00507CH 1      
+DMA1_C1CR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00507FH 1      
+DMA1_C1SPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005080H 1      
+DMA1_C1NDTR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005081H 1      
+DMA1_C1PAR . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005082H 2      
+DMA1_C1PARH. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005082H 1      
+DMA1_C1PARL. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005083H 1      
+DMA1_C1M0AR. . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005085H 2      
+DMA1_C1M0ARH . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005085H 1      
+DMA1_C1M0ARL . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005086H 1      
+DMA1_C2CR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005089H 1      
+DMA1_C2SPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00508AH 1      
+DMA1_C2NDTR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00508BH 1      
+DMA1_C2PAR . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00508CH 2      
+DMA1_C2PARH. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00508CH 1      
+DMA1_C2PARL. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00508DH 1      
+DMA1_C2M0AR. . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00508FH 2      
+DMA1_C2M0ARH . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00508FH 1      
+DMA1_C2M0ARL . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005090H 1      
+DMA1_C3CR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005093H 1      
+DMA1_C3SPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005094H 1      
+DMA1_C3NDTR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005095H 1      
+DMA1_C3PAR_C3M1AR. . . . . . . . . . .  HREG16   hreg16  U_INT   005096H 2      
+DMA1_C3PARH_C3M1ARH. . . . . . . . . .  HREG     hreg    U_CHAR  005096H 1      
+DMA1_C3PARL_C3M1ARL. . . . . . . . . .  HREG     hreg    U_CHAR  005097H 1      
+DMA1_C3M0AR. . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005099H 2      
+DMA1_C3M0ARH . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005099H 1      
+DMA1_C3M0ARL . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00509AH 1      
+SYSCFG_RMPCR1. . . . . . . . . . . . .  HREG     hreg    U_CHAR  00509EH 1      
+SYSCFG_RMPCR2. . . . . . . . . . . . .  HREG     hreg    U_CHAR  00509FH 1      
+EXTI_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A0H 1      
+EXTI_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A1H 1      
+EXTI_CR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A2H 1      
+EXTI_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A3H 1      
+EXTI_SR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A4H 1      
+EXTI_CONF. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A5H 1      
+WFE_CR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A6H 1      
+WFE_CR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A7H 1      
+WFE_CR3. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050A8H 1      
+RST_CR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050B0H 1      
+RST_SR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050B1H 1      
+PWR_CSR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050B2H 1      
+PWR_CSR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050B3H 1      
+CLK_CKDIVR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C0H 1      
+CLK_CRTCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C1H 1      
+CLK_ICKCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C2H 1      
+CLK_PCKENR1. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C3H 1      
+CLK_PCKENR2. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C4H 1      
+CLK_CCOR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C5H 1      
+CLK_ECKCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C6H 1      
+CLK_SCSR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C7H 1      
+CLK_SWR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C8H 1      
+CLK_SWCR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050C9H 1      
+CLK_CSSR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CAH 1      
+CLK_CBEEPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CBH 1      
+CLK_HSICALR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CCH 1      
+CLK_HSITRIMR . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CDH 1      
+CLK_HSIUNLCKR. . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CEH 1      
+CLK_REGCSR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050CFH 1      
+WWDG_CR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050D3H 1      
+WWDG_WR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050D4H 1      
+IWDG_KR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050E0H 1      
+IWDG_PR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050E1H 1      
+IWDG_RLR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050E2H 1      
+BEEP_CSR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050F0H 1      
+BEEP_CSR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0050F3H 1      
+RTC_TR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005140H 1      
+RTC_TR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005141H 1      
+RTC_TR3. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005142H 1      
+RTC_DR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005144H 1      
+RTC_DR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005145H 1      
+RTC_DR3. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005146H 1      
+RTC_CR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005148H 1      
+RTC_CR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005149H 1      
+RTC_CR3. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00514AH 1      
+RTC_ISR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00514CH 1      
+RTC_ISR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00514DH 1      
+RTC_SPRER. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005150H 2      
+RTC_SPRERH . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005150H 1      
+RTC_SPRERL . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005151H 1      
+RTC_APRER. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005152H 1      
+RTC_WUTR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005154H 2      
+RTC_WUTRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005154H 1      
+RTC_WUTRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005155H 1      
+RTC_WPR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005159H 1      
+RTC_ALRMAR1. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00515CH 1      
+RTC_ALRMAR2. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00515DH 1      
+RTC_ALRMAR3. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00515EH 1      
+RTC_ALRMAR4. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00515FH 1      
+SPI1_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005200H 1      
+SPI1_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005201H 1      
+SPI1_ICR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005202H 1      
+SPI1_SR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005203H 1      
+SPI1_DR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005204H 1      
+SPI1_CRCPR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005205H 1      
+SPI1_RXCRCR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005206H 1      
+SPI1_TXCRCR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005207H 1      
+I2C1_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005210H 1      
+I2C1_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005211H 1      
+I2C1_FREQR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005212H 1      
+I2C1_OARL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005213H 1      
+I2C1_OARH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005214H 1      
+I2C1_DR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005216H 1      
+I2C1_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005217H 1      
+I2C1_SR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005218H 1      
+I2C1_SR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005219H 1      
+I2C1_ITR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00521AH 1      
+I2C1_CCRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00521BH 1      
+I2C1_CCRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00521CH 1      
+I2C1_TRISER. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00521DH 1      
+I2C1_PECR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00521EH 1      
+USART1_SR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005230H 1      
+USART1_DR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005231H 1      
+USART1_BRR1. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005232H 1      
+USART1_BRR2. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005233H 1      
+USART1_CR1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005234H 1      
+USART1_CR2 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005235H 1      
+USART1_CR3 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005236H 1      
+USART1_CR4 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005237H 1      
+USART1_CR5 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005238H 1      
+USART1_GTR . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005239H 1      
+USART1_PSCR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00523AH 1      
+TIM2_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005250H 1      
+TIM2_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005251H 1      
+TIM2_SMCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005252H 1      
+TIM2_ETR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005253H 1      
+TIM2_DER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005254H 1      
+TIM2_IER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005255H 1      
+TIM2_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005256H 1      
+TIM2_SR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005257H 1      
+TIM2_EGR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005258H 1      
+TIM2_CCMR1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005259H 1      
+TIM2_CCMR2 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525AH 1      
+TIM2_CCER1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525BH 1      
+TIM2_CNTR. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00525CH 2      
+TIM2_CNTRH . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525CH 1      
+TIM2_CNTRL . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525DH 1      
+TIM2_PSCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525EH 1      
+TIM2_ARR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00525FH 2      
+TIM2_ARRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00525FH 1      
+TIM2_ARRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005260H 1      
+TIM2_CCR1. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005261H 2      
+TIM2_CCR1H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005261H 1      
+TIM2_CCR1L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005262H 1      
+TIM2_CCR2. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005263H 2      
+TIM2_CCR2H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005263H 1      
+TIM2_CCR2L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005264H 1      
+TIM2_BKR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005265H 1      
+TIM2_OISR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005266H 1      
+TIM3_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005280H 1      
+TIM3_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005281H 1      
+TIM3_SMCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005282H 1      
+TIM3_ETR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005283H 1      
+TIM3_DER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005284H 1      
+TIM3_IER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005285H 1      
+TIM3_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005286H 1      
+TIM3_SR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005287H 1      
+TIM3_EGR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005288H 1      
+TIM3_CCMR1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005289H 1      
+TIM3_CCMR2 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528AH 1      
+TIM3_CCER1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528BH 1      
+TIM3_CNTR. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00528CH 2      
+TIM3_CNTRH . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528CH 1      
+TIM3_CNTRL . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528DH 1      
+TIM3_PSCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528EH 1      
+TIM3_ARR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00528FH 2      
+TIM3_ARRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00528FH 1      
+TIM3_ARRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005290H 1      
+TIM3_CCR1. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005291H 2      
+TIM3_CCR1H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005291H 1      
+TIM3_CCR1L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005292H 1      
+TIM3_CCR2. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005293H 2      
+TIM3_CCR2H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005293H 1      
+TIM3_CCR2L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005294H 1      
+TIM3_BKR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005295H 1      
+TIM3_OISR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005296H 1      
+TIM1_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B0H 1      
+TIM1_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B1H 1      
+TIM1_SMCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B2H 1      
+TIM1_ETR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B3H 1      
+TIM1_DER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B4H 1      
+TIM1_IER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B5H 1      
+TIM1_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B6H 1      
+TIM1_SR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B7H 1      
+TIM1_EGR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B8H 1      
+TIM1_CCMR1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052B9H 1      
+TIM1_CCMR2 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BAH 1      
+TIM1_CCMR3 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BBH 1      
+TIM1_CCMR4 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BCH 1      
+TIM1_CCER1 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BDH 1      
+TIM1_CCER2 . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BEH 1      
+TIM1_CNTR. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052BFH 2      
+TIM1_CNTRH . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052BFH 1      
+TIM1_CNTRL . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C0H 1      
+TIM1_PSCR. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052C1H 2      
+TIM1_PSCRH . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C1H 1      
+TIM1_PSCRL . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C2H 1      
+TIM1_ARR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052C3H 2      
+TIM1_ARRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C3H 1      
+TIM1_ARRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C4H 1      
+TIM1_RCR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C5H 1      
+TIM1_CCR1. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052C6H 2      
+TIM1_CCR1H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C6H 1      
+TIM1_CCR1L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C7H 1      
+TIM1_CCR2. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052C8H 2      
+TIM1_CCR2H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C8H 1      
+TIM1_CCR2L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052C9H 1      
+TIM1_CCR3. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052CAH 2      
+TIM1_CCR3H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CAH 1      
+TIM1_CCR3L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CBH 1      
+TIM1_CCR4. . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0052CCH 2      
+TIM1_CCR4H . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CCH 1      
+TIM1_CCR4L . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CDH 1      
+TIM1_BKR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CEH 1      
+TIM1_DTR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052CFH 1      
+TIM1_OISR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052D0H 1      
+TIM1_DCR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052D1H 1      
+TIM1_DCR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052D2H 1      
+TIM1_DMAR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052D3H 1      
+TIM4_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E0H 1      
+TIM4_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E1H 1      
+TIM4_SMCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E2H 1      
+TIM4_DER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E3H 1      
+TIM4_IER . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E4H 1      
+TIM4_SR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E5H 1      
+TIM4_EGR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E6H 1      
+TIM4_CNTR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E7H 1      
+TIM4_PSCR. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E8H 1      
+TIM4_ARR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052E9H 1      
+IR_CR. . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0052FFH 1      
+ADC1_CR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005340H 1      
+ADC1_CR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005341H 1      
+ADC1_CR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005342H 1      
+ADC1_SR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005343H 1      
+ADC1_DR. . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005344H 2      
+ADC1_DRH . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005344H 1      
+ADC1_DRL . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005345H 1      
+ADC1_HTR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005346H 2      
+ADC1_HTRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005346H 1      
+ADC1_HTRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005347H 1      
+ADC1_LTR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005348H 2      
+ADC1_LTRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005348H 1      
+ADC1_LTRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005349H 1      
+ADC1_SQR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534AH 1      
+ADC1_SQR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534BH 1      
+ADC1_SQR3. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534CH 1      
+ADC1_SQR4. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534DH 1      
+ADC1_TRIGR1. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534EH 1      
+ADC1_TRIGR2. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00534FH 1      
+ADC1_TRIGR3. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005350H 1      
+ADC1_TRIGR4. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005351H 1      
+DAC_CR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005380H 1      
+DAC_CR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005381H 1      
+DAC_SWTRIGR. . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005384H 1      
+DAC_SR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005385H 1      
+DAC_RDHR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   005388H 2      
+DAC_RDHRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005388H 1      
+DAC_RDHRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005389H 1      
+DAC_LDHR . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   00538CH 2      
+DAC_LDHRH. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00538CH 1      
+DAC_LDHRL. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00538DH 1      
+DAC_DHR8 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005390H 1      
+DAC_DOR. . . . . . . . . . . . . . . .  HREG16   hreg16  U_INT   0053ACH 2      
+DAC_DORH . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0053ACH 1      
+DAC_DORL . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  0053ADH 1      
+RI_ICR1. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005431H 1      
+RI_ICR2. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005432H 1      
+RI_IOIR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005433H 1      
+RI_IOIR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005434H 1      
+RI_IOIR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005435H 1      
+RI_IOCMR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005436H 1      
+RI_IOCMR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005437H 1      
+RI_IOCMR3. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005438H 1      
+RI_IOSR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005439H 1      
+RI_IOSR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543AH 1      
+RI_IOSR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543BH 1      
+RI_IOGCR . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543CH 1      
+RI_ASCR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543DH 1      
+RI_ASCR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543EH 1      
+RI_RCR . . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  00543FH 1      
+COMP_CSR1. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005440H 1      
+COMP_CSR2. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005441H 1      
+COMP_CSR3. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005442H 1      
+COMP_CSR4. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005443H 1      
+COMP_CSR5. . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  005444H 1      
+CFG_GCR. . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F60H 1      
+ITC_SPR1 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F70H 1      
+ITC_SPR2 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F71H 1      
+ITC_SPR3 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F72H 1      
+ITC_SPR4 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F73H 1      
+ITC_SPR5 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F74H 1      
+ITC_SPR6 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F75H 1      
+ITC_SPR7 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F76H 1      
+ITC_SPR8 . . . . . . . . . . . . . . .  HREG     hreg    U_CHAR  007F77H 1      
+_fctptr_t. . . . . . . . . . . . . . .  TYPEDEF ------- PTR   -------      2
+_halt_ . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_jmp_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_nop_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_rim_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_sim_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_trap_ . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_wfe_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_wfi_. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_getCC_. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_setCC_. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_getSP_. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_setSP_. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_swapbyte_ . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+_swapnibble_ . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+DWORD. . . . . . . . . . . . . . . . .  TYPEDEF ------- ????? -------      4
+WORD . . . . . . . . . . . . . . . . .  TYPEDEF ------- U_CHAR  -------     2
+BYTE . . . . . . . . . . . . . . . . .  TYPEDEF ------- U_CHAR  -------     1
+delay. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+checkpacket. . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+handlecommand. . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+sendrequest. . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+CRC. . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+TxCRC. . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+RxCRC. . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+F_Comm . . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+Command. . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+TuneMode . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+F_Comm . . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+Lister . . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+COMMANDLIST. . . . . . . . . . . . . .  EXTERN  code    ARRAY   ------- -----
+TUNELIST . . . . . . . . . . . . . . .  EXTERN  code    ARRAY   ------- -----
+initUART . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+putpack. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+copypacket . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+clearRxBuff. . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+RxBuffer . . . . . . . . . . . . . . .  EXTERN  data    ARRAY   ------- -----
+TxBuffer . . . . . . . . . . . . . . .  EXTERN  data    ARRAY   ------- -----
+Comm_Len . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+RxStatus . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+RxCount. . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+plen . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+TxCount. . . . . . . . . . . . . . . .  EXTERN  data    U_CHAR  ------- -----
+TxPointer. . . . . . . . . . . . . . .  EXTERN  data    U_CHAR  ------- -----
+RxPointer. . . . . . . . . . . . . . .  EXTERN  data    U_CHAR  ------- -----
+TxBusy . . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+initTIM2 . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+initTIM3 . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+updateTIM3 . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+Tim2Flag . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+Tim2Counter. . . . . . . . . . . . . .  EXTERN  page0   U_INT   ------- -----
+CommError. . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+ErrCounter . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+PARAMS . . . . . . . . . . . . . . . .  EXTERN  eeprom  ARRAY   ------- -----
+PASSWORD . . . . . . . . . . . . . . .  EXTERN  
+EEbuffer . . . . . . . . . . . . . . .  EXTERN  page0   ARRAY   ------- -----
+ee_read. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+ee_pgm . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+readparameters . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+initIO . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+blink. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+LED_set. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+DE_set . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+CheckERF . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+initDAC. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+updateDAC. . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+DACvalue . . . . . . . . . . . . . . .  EXTERN  page0   U_INT   ------- -----
+Offset12 . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+Gain . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+Vtune. . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+compCRC. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+comp_crc . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+checkpacket. . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+handlecommand. . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+checkEmptyID . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+checkpassword. . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+sendpacket . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+sendOKresponse . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+sendERRresponse. . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+sendrequest. . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+CRC. . . . . . . . . . . . . . . . . .  PUBLIC  page0   U_CHAR  000000H 1      
+TxCRC. . . . . . . . . . . . . . . . .  PUBLIC  page0   U_CHAR  000001H 1      
+RxCRC. . . . . . . . . . . . . . . . .  PUBLIC  page0   U_CHAR  000002H 1      
+F_Comm . . . . . . . . . . . . . . . .  PUBLIC  bit     BIT     000000H 1      
+Command. . . . . . . . . . . . . . . .  PUBLIC  page0   U_CHAR  000003H 1      
+TuneMode . . . . . . . . . . . . . . .  PUBLIC  bit     BIT     000001H 1      
+F_Comm . . . . . . . . . . . . . . . .  PUBLIC  bit     BIT     000000H 1      
+Lister . . . . . . . . . . . . . . . .  PUBLIC  bit     BIT     000002H 1      
+COMMANDLIST. . . . . . . . . . . . . .  PUBLIC  code    ARRAY   000000H 8      
+TUNELIST . . . . . . . . . . . . . . .  PUBLIC  code    ARRAY   000008H 32     
+  i?117. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+compCRC. . . . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+ crcCount?116. . . . . . . . . . . . .  PARAM    auto    U_CHAR  000001H 1      
+  i?117. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  j?119. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+comp_crc . . . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+ b?118 . . . . . . . . . . . . . . . .  PARAM    auto    U_CHAR  000001H 1      
+  j?119. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  i?121. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+checkpacket. . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+ packlen?120 . . . . . . . . . . . . .  PARAM    auto    U_CHAR  000001H 1      
+  i?121. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  tmp?124. . . . . . . . . . . . . . .  PUBLIC  auto     BASE    000000H 4      
+  i?125. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  tmp?126. . . . . . . . . . . . . . .  PUBLIC  auto     BASE    000000H 4      
+  i?127. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  i?128. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+handlecommand. . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+  tmp?124. . . . . . . . . . . . . . .  PUBLIC  auto     BASE    000000H 4      
+  i?125. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000004H 1      
+  tmp?126. . . . . . . . . . . . . . .  PUBLIC  auto     BASE    000005H 4      
+  i?127. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000009H 1      
+  i?128. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  00000AH 1      
+  i?131. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+checkEmptyID . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+  i?131. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+  i?134. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+checkpassword. . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+  i?134. . . . . . . . . . . . . . . .  PUBLIC  auto    U_CHAR  000000H 1      
+sendpacket . . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+ txcount?135 . . . . . . . . . . . . .  PARAM    auto    U_CHAR  000000H 1      
+sendOKresponse . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+sendERRresponse. . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+sendrequest. . . . . . . . . . . . . .  PUBLIC  CODE    PROC    ------- -----
+TxBuffer . . . . . . . . . . . . . . .  EXTERN  data    ARRAY   ------- -----
+?BH. . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+?CH. . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+?CL. . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+?BL. . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+RxBuffer . . . . . . . . . . . . . . .  EXTERN  data    ARRAY   ------- -----
+clearRxBuff. . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+CommError. . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+RxStatus . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+ErrCounter . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+Gain . . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+DACvalue . . . . . . . . . . . . . . .  EXTERN  page0   U_INT   ------- -----
+CheckERF . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+PARAMS . . . . . . . . . . . . . . . .  EXTERN  eeprom  ARRAY   ------- -----
+Offset12 . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+EEbuffer . . . . . . . . . . . . . . .  EXTERN  page0   ARRAY   ------- -----
+Vtune. . . . . . . . . . . . . . . . .  EXTERN  page0   U_CHAR  ------- -----
+LED_set. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+updateDAC. . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+blink. . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+ee_read. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+ee_pgm . . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+updateTIM3 . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+readparameters . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+PASSWORD . . . . . . . . . . . . . . .  EXTERN  
+RxPointer. . . . . . . . . . . . . . .  EXTERN  data    U_CHAR  ------- -----
+putpack. . . . . . . . . . . . . . . .  EXTERN  CODE    PROC    ------- -----
+Tim2Flag . . . . . . . . . . . . . . .  EXTERN  bit     BIT     ------- -----
+RCSTM8 COMPILER V2.28.10.092
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    879    ----
+   CONSTANT SIZE    =     40    ----
+   DATA SIZE        =   ----    ----
+   PAGE0 SIZE       =      4    ----
+   BIT SIZE         =      4    ----
+END OF MODULE INFORMATION.
+
+RCSTM8 COMPILATION COMPLETE.  0 WARNING,  0 ERROR
